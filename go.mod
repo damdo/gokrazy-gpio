@@ -1,5 +1,5 @@
-module github.com/gokrazy/hello-gpio
+module github.com/damdo/gokrazy-gpio
 
 go 1.14
 
-require periph.io/x/periph v3.6.4+incompatible
+require periph.io/x/periph v3.6.8+incompatible // indirect
