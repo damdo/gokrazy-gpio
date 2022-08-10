@@ -3,12 +3,15 @@ package main
 import (
 	"fmt"
 	"log"
+	"strings"
 	"time"
 
 	"periph.io/x/periph/conn/gpio"
 	"periph.io/x/periph/conn/gpio/gpioreg"
 	"periph.io/x/periph/host"
 )
+
+var debouncingDelay = time.Second * 2
 
 func main() {
 	// Load all the drivers:
@@ -22,33 +25,44 @@ func main() {
 		log.Fatal("Failed to find GPIO2")
 	}
 
-	// log.Printf("Toggling GPIO forever")
-	// t := time.NewTicker(5 * time.Second)
-	// for l := gpio.Low; ; l = !l {
-	// 	log.Printf("setting GPIO pin number 18 (signal BCM24) to %v", l)
-	// 	// Lookup a pin by its location on the board:
-	// 	if err := rpi.P1_18.In(gpio.PullDown, gpio.); err != nil {
-	// 		return err
-	// 	}
-	// 	<-t.C
-	// }
-	for i := 0; i < 5; i++ {
-		fmt.Printf("%s: %s\n", p, p.Function())
-		time.Sleep(1 * time.Second)
-	}
+	fmt.Printf("listening for clicks on: %s, current state: %s\n", p, p.Function())
 
 	// Set it as input, with an internal pull down resistor:
 	err := p.In(gpio.PullNoChange, gpio.BothEdges)
-	if err != nil {
-		log.Println("errrr:", err)
+	// ignore not exported error
+	if err != nil && !strings.Contains(err.Error(), "is not exported by sysfs") {
+		log.Println(err)
 	}
 
-	fmt.Println("entering wait loop")
+	fmt.Println("entering checking loop")
+	// start a timer for keeping track of the delay between clicks
+	// to debounce long clicks
+	start := time.Now().Add(debouncingDelay)
 	// Wait for edges as detected by the hardware, and print the value read:
+	previous := gpio.High
 	for {
 		p.WaitForEdge(-1)
-		fmt.Printf("-> %s\n", p.Read())
+		// Level is normally High.
+		l := p.Read()
+
+		now := time.Now()
+		elapsed := now.Sub(start)
+		// If now level is Low and was previously High,
+		// State has changed.
+		if l == gpio.Low && previous == gpio.High {
+			fmt.Printf("state change High -> Low\n")
+			// Only if the last click has happened before the debouncing delay
+			// we can consider this as a new click
+			if elapsed > debouncingDelay {
+				fmt.Println("considering it a click")
+				// reset the last click timer
+				start = time.Now()
+			}
+		}
+		// Store previous value for comparison.
+		previous = l
+
+		// Sleep to pause a little and avoid CPU lock-up.
 		time.Sleep(100 * time.Millisecond)
-		fmt.Println("next")
 	}
 }
